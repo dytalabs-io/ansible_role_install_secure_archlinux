@@ -13,19 +13,19 @@
 
 - name: Copy cloud-init configuration file [meta-data]
   ansible.builtin.template:
-    src: meta-data.yaml
+    src: meta-data.yaml.j2
     dest: "{{ install_secure_archlinux_mount_point }}/var/lib/cloud/seed/nocloud/meta-data"
     mode: '0644'
 
 - name: Copy cloud-init configuration file [network-config]
   ansible.builtin.template:
-    src: network-config.yaml
+    src: network-config.yaml.j2
     dest: "{{ install_secure_archlinux_mount_point }}/var/lib/cloud/seed/nocloud/network-config"
     mode: '0644'
 
 - name: Copy cloud-init configuration file [user-data]
   ansible.builtin.template:
-    src: user-data.yaml
+    src: user-data.yaml.j2
     dest: "{{ install_secure_archlinux_mount_point }}/var/lib/cloud/seed/nocloud/user-data"
     mode: '0644'
 

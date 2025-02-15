@@ -1,5 +1,5 @@
 ---
-# defaults file for dytalabs_io.install_secure_archlinux
+# defaults file for dytalabs-io.install_secure_archlinux
 disksetup_device_is_ssd: "{{ disksetup_device | regex_search('nvme') | bool }}"
 
 install_secure_archlinux_mount_point: "/mnt"

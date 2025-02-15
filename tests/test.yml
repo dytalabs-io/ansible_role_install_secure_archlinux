@@ -1,5 +1,6 @@
 ---
-- hosts: localhost
+- name: Basic
+  hosts: localhost
   remote_user: root
   roles:
-    - dytalabs_io.install_secure_archlinux
+    - dytalabs-io.install_secure_archlinux

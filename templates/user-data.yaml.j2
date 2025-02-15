@@ -15,7 +15,7 @@ ntp:
 
 users:
   - name: "{{ install_secure_archlinux_wheel_user }}"
-    uid: 971
+    uid: "{{ install_secure_archlinux_wheel_user_id }}"
     gecos: Administrator
     primary_group: "{{ install_secure_archlinux_wheel_group }}"
     groups: users,wheel,adm
@@ -87,7 +87,9 @@ write_files:
       # that require network functionality will fail.
       127.0.0.1               localhost.localdomain    localhost
       ::1                     localhost6.localdomain6  localhost6
+      {% if network_static_ip is defined %}
       {{ network_static_ip }}         {{ hostname }}.{{ domain }}         {{ hostname }}
+      {% endif %}
 
   - path: /etc/issue
     permissions: '0644'
@@ -184,10 +186,10 @@ write_files:
         "useask": false
       }
 
-# # Final message
-# final_message: |2+
-#   cloud-init has finished
-#   version: $version
-#   timestamp: $timestamp
-#   datasource: $datasource
-#   uptime: $uptime
+# Final message
+final_message: |2+
+  cloud-init has finished
+  version: $version
+  timestamp: $timestamp
+  datasource: $datasource
+  uptime: $uptime

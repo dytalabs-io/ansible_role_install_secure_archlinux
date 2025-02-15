@@ -6,11 +6,13 @@ network:
     id0:
       match:
         macaddress: "{{ network_mac }}"
-      dhcp4: false
-      dhcp6: false
+      dhcp4: "{{ network_static_ip | default(false) | ternary(false, true) }}"
+      dhcp6: "{{ network_static_ip | default(false) | ternary(false, true) }}"
+{% if network_static_ip is defined %}
       addresses:
         - "{{ network_static_ip }}/{{ network_cidr }}"
       gateway4: "{{ network_gateway4 }}"
       nameservers:
         search: ["{{ domain }}"]
         addresses: "{{ network_nameservers }}"
+{% endif %}
