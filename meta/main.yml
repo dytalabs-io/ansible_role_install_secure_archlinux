@@ -1,6 +1,8 @@
 galaxy_info:
+  namespace: dytalabs_io
+  role_name: install_secure_archlinux
   author: ryza
-  description: dytalabs
+  description: A secure installation of Arch Linux
   company: dytalabs.io
 
   # If the issue tracker for your role is not on github, uncomment the
