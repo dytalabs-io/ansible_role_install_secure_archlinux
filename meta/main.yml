@@ -13,4 +13,5 @@ galaxy_info:
       versions: ['all']
 
   galaxy_tags: ['archlinux', 'secure', 'installation']
-dependencies: []
+dependencies:
+  - role: dytalabs-io.update_base_custom_repo
