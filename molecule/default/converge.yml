@@ -1,0 +1,8 @@
+---
+- name: Converge – apply the secure Arch Linux installation
+  hosts: all
+  become: true
+  tasks:
+    - name: Include the install_secure_archlinux role tasks
+      import_role:
+        name: dytalabs-io.install_secure_archlinux
