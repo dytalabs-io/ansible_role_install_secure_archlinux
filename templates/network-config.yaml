@@ -1,0 +1,16 @@
+#cloud-config
+
+network:
+  version: 2
+  ethernets:
+    id0:
+      match:
+        macaddress: "{{ network_mac }}"
+      dhcp4: false
+      dhcp6: false
+      addresses:
+        - "{{ network_static_ip }}/{{ network_cidr }}"
+      gateway4: "{{ network_gateway4 }}"
+      nameservers:
+        search: ["{{ domain }}"]
+        addresses: "{{ network_nameservers }}"

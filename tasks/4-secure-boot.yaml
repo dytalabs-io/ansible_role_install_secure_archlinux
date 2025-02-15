@@ -1,0 +1,32 @@
+- name: Sign the bootloader
+  loop:
+    - sbctl create-keys
+    - sbctl verify | sed -E 's|^.* (/.+) is not signed$|sbctl sign -s "\1"|e'
+    - sbctl sign -s -o /usr/lib/systemd/boot/efi/systemd-bootx64.efi.signed /usr/lib/systemd/boot/efi/systemd-bootx64.efi
+  ansible.builtin.shell: |2+
+    set -o pipefail
+    arch-chroot {{ install_secure_archlinux_mount_point }} /bin/bash -c "{{ item }}"
+  register: recovery_key
+  changed_when: recovery_key.rc == 0
+
+- name: Enroll the keys
+  ansible.builtin.shell: |2+
+    set -o pipefail
+    arch-chroot {{ install_secure_archlinux_mount_point }} /bin/bash -c "sbctl enroll-keys -m"
+  register: enroll_keys
+  changed_when: enroll_keys.rc == 0
+  failed_when: false
+
+- name: Debug message
+  when: enroll_keys.rc != 0
+  ansible.builtin.debug:
+    msg: "Unexpected error occurred while signing the bootloader."
+
+- name: Remove previous initram
+  when: enroll_keys.rc == 0
+  loop:
+    - /boot/initramfs-linux-fallback.img
+    - /boot/initramfs-linux.img
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent

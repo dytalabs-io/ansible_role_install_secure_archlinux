@@ -1,0 +1,23 @@
+- name: Required Check
+  ansible.builtin.include_tasks:
+    file: 0-check-var.yaml
+
+- name: Partition Disk
+  ansible.builtin.include_tasks:
+    file: 1-partition-disk.yaml
+
+- name: Pacstrap OS
+  ansible.builtin.include_tasks:
+    file: 2-pacstrap-os.yaml
+
+- name: Boot Loader
+  ansible.builtin.include_tasks:
+    file: 3-boot-loader.yaml
+
+- name: Secure Boot
+  ansible.builtin.include_tasks:
+    file: 4-secure-boot.yaml
+
+- name: Cloud Init
+  ansible.builtin.include_tasks:
+    file: 5-cloud-init.yaml

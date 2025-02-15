@@ -1,0 +1,193 @@
+#cloud-config
+
+hostname: "{{ hostname }}"
+fqdn: "{{ hostname }}.{{ domain }}"
+create_hostname_file: true
+prefer_fqdn_over_hostname: true
+preserve_hostname: false
+
+locale: "{{ locale }}"
+timezone: Australia/Melbourne
+
+ntp:
+  enabled: true
+  ntp_client: /usr/lib/systemd/systemd-timesyncd
+
+users:
+  - name: "{{ install_secure_archlinux_wheel_user }}"
+    uid: 971
+    gecos: Administrator
+    primary_group: "{{ install_secure_archlinux_wheel_group }}"
+    groups: users,wheel,adm
+    homedir: /var/lib/{{ install_secure_archlinux_wheel_user }}
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    shell: /bin/bash
+    ssh_authorized_keys: "{{ install_secure_archlinux_ssh_authorized_keys }}"
+
+chpasswd:
+  expire: false
+  users:
+    - {name: "{{ install_secure_archlinux_wheel_user }}", password: "{{ install_secure_archlinux_wheel_password }}"}
+
+# Update and install packages
+package_reboot_if_required: true
+package_update: true
+package_upgrade: true
+packages: []
+
+# phone_home:
+#   post: [pub_key_rsa, pub_key_ecdsa, pub_key_ed25519, instance_id, hostname, fqdn]
+#   tries: 5
+#   url: http://example.com/
+
+# Commands to run
+runcmd:
+  - echo "Cloud-init executed successfully!" >> /var/log/cloud-init.log
+  - sed -i 's/^\({{ install_secure_archlinux_wheel_group }}:[^:]*:\)[0-9]*:/\1{{ install_secure_archlinux_wheel_group_id }}:/' /etc/group
+  - sed -i 's/^\({{ install_secure_archlinux_wheel_user }}:[^:]*:[^:]*:\)[0-9]*:/\1{{ install_secure_archlinux_wheel_user_id }}:/' /etc/passwd
+  - mkdir -p /home/.yay && chown {{ install_secure_archlinux_wheel_user }}:{{ install_secure_archlinux_wheel_group }} /home/.yay && chmod 0700 /home/.yay
+  - chown -R {{ install_secure_archlinux_wheel_user }}:{{ install_secure_archlinux_wheel_group }} /var/lib/{{ install_secure_archlinux_wheel_user }}
+  - userdel arch || true
+  - systemctl enable  -f --now systemd-networkd.service
+  - systemctl enable  -f --now systemd-timesyncd.service
+  - systemctl enable  -f --now systemd-resolved.service
+  - systemctl enable  -f --now firewalld.service
+  - systemctl enable  -f --now sshd.service
+  - |
+    if ! command -v yay > /dev/null 2>&1; then
+      su - {{ install_secure_archlinux_wheel_user }} -c "git clone https://aur.archlinux.org/yay.git /tmp/yay"
+      su - {{ install_secure_archlinux_wheel_user }} -c "cd /tmp/yay && makepkg -si --noconfirm"
+      su - {{ install_secure_archlinux_wheel_user }} -c "rm -rf /tmp/yay"
+    else
+      echo "yay is already installed" >> /var/log/cloud-init.log
+    fi
+  - su - {{ install_secure_archlinux_wheel_user }} -c "yay --noconfirm -S clamav-unofficial-sigs downgrade"
+  - systemctl enable -f --now clamav-freshclam-once.timer clamav-unofficial-sigs.timer clamav-daemon.service clamav-daemon.socket
+  - pacman --noconfirm -Rcuns cloud-init
+
+allow_public_ssh_keys: false
+disable_root: true
+# disable_root_opts: no-port-forwarding,no-agent-forwarding,no-X11-forwarding
+ssh_deletekeys: true
+ssh_genkeytypes: [rsa, ecdsa, ed25519]
+ssh_quiet_keygen: true
+ssh_publish_hostkeys:
+  enabled: false
+  blacklist: []
+no_ssh_fingerprints: false
+ssh:
+  emit_keys_to_console: false
+
+# Write static files
+write_files:
+  - path: /etc/hosts
+    permissions: '0644'
+    content: |2+
+      # Do not remove the following line, or various programs
+      # that require network functionality will fail.
+      127.0.0.1               localhost.localdomain    localhost
+      ::1                     localhost6.localdomain6  localhost6
+      {{ network_static_ip }}         {{ hostname }}.{{ domain }}         {{ hostname }}
+
+  - path: /etc/issue
+    permissions: '0644'
+    content: |2+
+
+      \e[47m\e[31m###############################################################\e[0m
+      \e[47m\e[31m#  WARNING: Unauthorized access to this system is PROHIBITED  #\e[0m
+      \e[47m\e[31m#  Access is restricted to authorized users only.             #\e[0m
+      \e[47m\e[31m#  All activity is monitored and logged.                      #\e[0m
+      \e[47m\e[31m#  Unauthorized users will be prosecuted to the full extent   #\e[0m
+      \e[47m\e[31m#  of the law.                                                #\e[0m
+      \e[47m\e[31m###############################################################\e[0m
+
+  - path: /etc/locale.conf
+    permissions: '0644'
+    content: |2+
+      LANGUAGE={{ locale }}:{{ locale_fallback }}
+      LANG={{ locale }}.UTF-8
+      LC_ADDRESS={{ locale }}.UTF-8
+      LC_MEASUREMENT={{ locale }}.UTF-8
+      LC_MESSAGES={{ locale }}.UTF-8
+      LC_MONETARY={{ locale }}.UTF-8
+      LC_NAME={{ locale }}.UTF-8
+      LC_NUMERIC={{ locale }}.UTF-8
+      LC_PAPER={{ locale }}.UTF-8
+      LC_TELEPHONE={{ locale }}.UTF-8
+      LC_TIME={{ locale }}.UTF-8
+      LC_COLLATE=C
+
+  - path: /etc/profile.d/pacman.sh
+    permissions: '0644'
+    content: |2+
+      #!/bin/bash
+      alias pacman='/usr/bin/yay --noconfirm'
+
+  # TODO: fix me
+  - path: /etc/profile.d/screenfetch.sh
+    permissions: '0644'
+    content: |2+
+      #!/bin/bash
+      screenfetch
+
+  # TODO: fix me
+  - path: /etc/sysctl.d/99-custom.conf
+    permissions: '0644'
+    content: |2+
+      net.ipv4.ip_forward = 1
+      net.ipv4.conf.all.accept_source_route = 0
+      net.ipv4.conf.all.accept_redirects = 0
+      net.ipv4.conf.all.secure_redirects = 1
+
+  - path: /var/lib/{{ install_secure_archlinux_wheel_user }}/.config/yay/config.json
+    permissions: '0644'
+    owner: "{{ install_secure_archlinux_wheel_user }}:{{ install_secure_archlinux_wheel_group }}"
+    content: |2+
+      {
+        "aururl": "https://aur.archlinux.org",
+        "buildDir": "/home/.yay",
+        "editor": "",
+        "editorflags": "",
+        "makepkgbin": "makepkg",
+        "makepkgconf": "",
+        "pacmanbin": "pacman",
+        "pacmanconf": "/etc/pacman.conf",
+        "tarbin": "bsdtar",
+        "redownload": "false",
+        "rebuild": "false",
+        "answerclean": "none",
+        "answerdiff": "none",
+        "answeredit": "none",
+        "answerupgrade": "none",
+        "gitbin": "git",
+        "gpgbin": "gpg",
+        "gpgflags": "",
+        "mflags": "",
+        "sortby": "votes",
+        "gitflags": "",
+        "removemake": "true",
+        "requestsplitn": 150,
+        "sortmode": 0,
+        "completionrefreshtime": 7,
+        "sudoloop": true,
+        "timeupdate": false,
+        "devel": false,
+        "cleanAfter": true,
+        "gitclone": true,
+        "provides": true,
+        "pgpfetch": true,
+        "upgrademenu": false,
+        "cleanmenu": false,
+        "diffmenu": false,
+        "editmenu": false,
+        "combinedupgrade": true,
+        "useask": false
+      }
+
+# # Final message
+# final_message: |2+
+#   cloud-init has finished
+#   version: $version
+#   timestamp: $timestamp
+#   datasource: $datasource
+#   uptime: $uptime

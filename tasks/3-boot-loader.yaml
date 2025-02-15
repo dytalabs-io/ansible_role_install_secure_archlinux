@@ -1,0 +1,146 @@
+- name: Generate fstab
+  ansible.builtin.shell: |
+    set -o pipefail
+    genfstab -U {{ install_secure_archlinux_mount_point }} > {{ install_secure_archlinux_mount_point }}/etc/fstab
+  register: fstab_created
+  changed_when: fstab_created.rc == 0
+
+- name: Get network device driver
+  ansible.builtin.shell:
+    set -o pipefail
+    ethtool --driver {{ network_device }} | grep driver | cut -d' ' -f2
+  register: network_driver
+  changed_when: false
+
+- name: Update mkinitcpio.conf
+  loop:
+    - regexp: '^MODULES=(.+)$'
+      replace: 'MODULES=(nbd {{ network_driver.stdout }} btrfs xfs)'
+    - regexp: '^BINARIES=(.+)$'
+      replace: 'BINARIES=(/usr/bin/btrfs)'
+    - regexp: '^HOOKS=(.+)$'
+      replace: 'HOOKS=(base udev btrfs autodetect microcode modconf kms keyboard keymap consolefont block net clevis encrypt filesystems fsck)'
+      # replace: 'HOOKS=(systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems fsck)'
+  ansible.builtin.replace:
+    path: "{{ install_secure_archlinux_mount_point | default('') }}/etc/mkinitcpio.conf"
+    regexp: "{{ item.regexp }}"
+    replace: "{{ item.replace }}"
+
+- name: Get cryptdevice UUID
+  ansible.builtin.command: blkid -s UUID -o value {{ partitioning_root_device_node }}
+  register: cryptdevice_uuid
+  changed_when: false
+
+- name: Get resume UUID
+  ansible.builtin.command: blkid -s UUID -o value /dev/mapper/root_fs
+  register: resume_uuid
+  changed_when: false
+
+- name: Get resume offset
+  ansible.builtin.command: btrfs inspect-internal map-swapfile -r {{ install_secure_archlinux_mount_point | default('') }}/swap/swap_file
+  register: resume_offset
+  changed_when: false
+
+# TODO: acpi_osi
+- name: Update kernel parameters
+  ansible.builtin.copy:
+    content: >2-
+      cryptdevice=UUID={{ cryptdevice_uuid.stdout }}:root_fs:{{ 'allow-discards' if disksetup_device_is_ssd else '' }}
+      root=/dev/mapper/root_fs rootflags=subvol=@ rw rootfstype=btrfs
+      resume=UUID={{ resume_uuid.stdout }} resume_offset={{ resume_offset.stdout }}
+      intel_iommu=on kvm.ignore_msrs=1 acpi_osi=\\"Windows 2018.2\\"
+      no_console_suspend splash quiet ip=:::::eth0:dhcp
+    dest: "{{ install_secure_archlinux_mount_point | default('') }}/etc/kernel/cmdline"
+    mode: "0644"
+
+- name: Generate uki images
+  loop:
+    - regexp: '^#?default_config=(.+)$'
+      replace: '#default_config=\1'
+    - regexp: '^#?default_image=(.+)$'
+      replace: '#default_image=\1'
+    - regexp: '^#?default_uki=(.+)$'
+      replace: 'default_uki=\1'
+    - regexp: '^#?default_options=(.+)$'
+      replace: 'default_options=\1'
+    - regexp: '^#?fallback_config=(.+)$'
+      replace: '#fallback_config=\1'
+    - regexp: '^#?fallback_image=(.+)$'
+      replace: '#fallback_image=\1'
+    - regexp: '^#?fallback_uki=(.+)$'
+      replace: 'fallback_uki=\1'
+    - regexp: '^#?fallback_options=(.+)$'
+      replace: 'fallback_options=\1'
+  ansible.builtin.replace:
+    path: "{{ install_secure_archlinux_mount_point | default('') }}/etc/mkinitcpio.d/linux.preset"
+    regexp: "{{ item.regexp }}"
+    replace: "{{ item.replace }}"
+
+- name: Generate /etc/vconsole.conf
+  ansible.builtin.copy:
+    content: |2-
+      KEYMAP=us
+      FONT=Lat2-Terminus16
+    dest: "{{ install_secure_archlinux_mount_point | default('') }}/etc/vconsole.conf"
+    mode: "0644"
+
+- name: Write /etc/crypttab.initramfs
+  ansible.builtin.copy:
+    content: |2-
+      root_fs    UUID={{ cryptdevice_uuid.stdout }}    none    {{ 'discard' if disksetup_device_is_ssd else '' }}
+    dest: "{{ install_secure_archlinux_mount_point | default('') }}/etc/crypttab.initramfs"
+    mode: "0600"
+
+- name: Create recovery key
+  ansible.builtin.shell: |2+
+    set -o pipefail
+    arch-chroot {{ install_secure_archlinux_mount_point }} \
+      /bin/bash -c "systemd-cryptenroll {{ partitioning_root_device_node }} --wipe-slot=1 || true"
+    arch-chroot {{ install_secure_archlinux_mount_point }} \
+      /bin/bash -c 'printf "{{ luks_password }}\n" | \
+                    script -q -c "systemd-cryptenroll {{ partitioning_root_device_node }} --recovery-key" /dev/null > /root/recovery_key'
+  register: recovery_key
+  changed_when: recovery_key.rc == 0
+  no_log: true
+
+- name: Copy the clevis file
+  loop:
+    - etc/initcpio/hooks/clevis
+    - etc/initcpio/install/clevis
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ install_secure_archlinux_mount_point }}/{{ item }}"
+    mode: "0644"
+
+- name: Wait 30 seconds for ip address
+  ansible.builtin.replace:
+    path: "{{ install_secure_archlinux_mount_point }}/usr/lib/initcpio/hooks/net"
+    regexp: 'ipconfig\s+"ip=\$\{ip\}"'
+    replace: 'ipconfig -t 30 "ip=${ip}"'
+
+- name: Bind with tang
+  when: nbde_address is defined
+  ansible.builtin.shell: |2+
+    set -o pipefail
+    arch-chroot {{ install_secure_archlinux_mount_point }} \
+      /bin/bash -c "systemd-cryptenroll {{ partitioning_root_device_node }} --wipe-slot=2 || true"
+    arch-chroot {{ install_secure_archlinux_mount_point }} \
+      /bin/bash -c "echo '{{ luks_password }}' | \
+                    clevis luks bind -y -s 2 -d {{ partitioning_root_device_node }} \
+                      tang '{\"url\": \"http://{{ nbde_address }}:{{ nbde_port | default(80, true) }}\"}' -k -"
+  register: bind_with_tang
+  changed_when: bind_with_tang.rc == 0
+  no_log: true
+
+- name: Generate initramfs
+  ansible.builtin.command:
+    cmd: arch-chroot {{ install_secure_archlinux_mount_point }} mkinitcpio -P
+  changed_when: true
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Install bootctl
+  ansible.builtin.command: arch-chroot {{ install_secure_archlinux_mount_point }} bootctl --esp-path=/efi install
+  changed_when: true

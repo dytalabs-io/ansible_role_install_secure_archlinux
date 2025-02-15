@@ -1,0 +1,116 @@
+- name: Close the swap partition
+  ansible.builtin.command: swapoff {{ install_secure_archlinux_mount_point }}/swap/swap_file
+  changed_when: true
+  failed_when: false
+
+- name: Clear the root partition
+  ansible.builtin.command: umount -fR {{ install_secure_archlinux_mount_point }}
+  changed_when: true
+  failed_when: false
+
+- name: Close the root partition
+  community.crypto.luks_device:
+    state: closed
+    name: root_fs
+
+- name: Wipe the disk
+  ansible.builtin.command: wipefs -a {{ disksetup_device }}
+  changed_when: true
+
+- name: Create partition  # noqa: args[module]
+  loop: "{{ install_secure_archlinux_partitioning_list }}"
+  community.general.parted: "{{ item }}"
+
+- name: Enumerate created partitions
+  ansible.builtin.shell: |2-
+    set -o pipefail
+    lsblk -n -o PATH {{ disksetup_device }} | tail -n2
+  register: _partitions
+  changed_when: false
+
+- name: Assign partitions to variables
+  ansible.builtin.set_fact:
+    partitioning_uefi_device_node: "{{ _partitions.stdout_lines[0] }}"
+    partitioning_root_device_node: "{{ _partitions.stdout_lines[1] }}"
+    cacheable: true
+
+- name: LUKS format the root partition
+  community.crypto.luks_device:
+    device: "{{ partitioning_root_device_node }}"
+    state: opened
+    name: root_fs
+    passphrase: "{{ luks_password }}"
+
+- name: Format the root partition with btrfs
+  community.general.filesystem:
+    dev: /dev/mapper/root_fs
+    fstype: btrfs
+
+- name: Mount the default subvolume
+  ansible.posix.mount:
+    state: mounted
+    src: /dev/mapper/root_fs
+    path: "{{ install_secure_archlinux_mount_point }}"
+    fstype: btrfs
+
+- name: Create subvolumes
+  loop: "{{ install_secure_archlinux_partitioning_subvolumes }}"
+  ansible.builtin.command: btrfs subvolume create {{ install_secure_archlinux_mount_point + '/' + item.name }}
+  args:
+    creates: "{{ install_secure_archlinux_mount_point + '/' + item.name }}"
+  changed_when: true
+
+- name: Umount the default subvolume
+  ansible.builtin.command: umount -fR {{ install_secure_archlinux_mount_point }}
+  changed_when: true
+
+- name: Mount the subvolumes
+  loop: "{{ install_secure_archlinux_partitioning_subvolumes }}"
+  ansible.builtin.shell: |2-
+    set -o pipefail
+    mkdir -m 0755 -p {{ install_secure_archlinux_mount_point + item.mountpoint }}
+    mount -t btrfs -o {{ item.options }},subvol=/{{ item.name }} \
+      /dev/mapper/root_fs {{ install_secure_archlinux_mount_point + item.mountpoint }}
+  changed_when: true
+
+- name: Format the EFI partition
+  community.general.filesystem:
+    dev: "{{ partitioning_uefi_device_node }}"
+    fstype: vfat
+
+- name: Create efi mount point
+  ansible.builtin.file:
+    path: "{{ install_secure_archlinux_mount_point }}/efi"
+    state: directory
+    mode: "0700"
+
+- name: Mount EFI partition
+  ansible.posix.mount:  # noqa: fqcn[canonical]
+    path: "{{ install_secure_archlinux_mount_point }}/efi"
+    src: "{{ partitioning_uefi_device_node }}"
+    fstype: vfat
+    opts: rw,noatime,dmask=0077,fmask=0077,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro
+    state: mounted
+
+- name: Create efi directories
+  loop:
+    - "{{ install_secure_archlinux_mount_point }}/efi/EFI/BOOT"
+    - "{{ install_secure_archlinux_mount_point }}/efi/EFI/Linux"
+    - "{{ install_secure_archlinux_mount_point }}/efi/EFI/systemd"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0700"
+
+- name: Create swapfile
+  vars:
+    swap_size_in_gb: "{{ (((ansible_memtotal_mb / 1024) | int) + ((ansible_memtotal_mb % 1024) > 0)) * 2 }}"
+  ansible.builtin.shell: |2-
+    rm -f {{ install_secure_archlinux_mount_point }}/swap/swap_file
+    btrfs filesystem mkswapfile --size {{ swap_size_in_gb }}G --uuid clear {{ install_secure_archlinux_mount_point }}/swap/swap_file
+  changed_when: true
+
+- name: Enable swap
+  ansible.builtin.command: >2-
+    swapon {{ '--discard' if disksetup_device_is_ssd else '' }} --priority=100 {{ install_secure_archlinux_mount_point }}/swap/swap_file
+  changed_when: true

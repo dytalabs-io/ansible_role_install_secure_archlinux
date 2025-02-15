@@ -1,0 +1,99 @@
+---
+# defaults file for dytalabs_io.install_secure_archlinux
+disksetup_device_is_ssd: "{{ disksetup_device | regex_search('nvme') | bool }}"
+
+install_secure_archlinux_mount_point: "/mnt"
+
+install_secure_archlinux_partitioning_list:
+  - align: "optimal"
+    device: "{{ disksetup_device }}"
+    flags: ["boot", "esp"]
+    label: "gpt"
+    name: "EFI"
+    number: 1
+    part_type: "primary"
+    part_start: "0%"
+    part_end: "1GiB"
+    state: "present"
+  - align: "optimal"
+    device: "{{ disksetup_device }}"
+    flags: []
+    label: "gpt"
+    name: "ROOT_FS"
+    number: 2
+    part_type: "primary"
+    part_start: "1GiB"
+    state: "present"
+
+install_secure_archlinux_partitioning_subvolumes:
+  - name: "@"
+    mountpoint: /
+    options: "rw,noatime,compress=zstd:3{{ ',ssd,discard=async' if disksetup_device_is_ssd else '' }},space_cache=v2"
+  - name: "@home"
+    mountpoint: /home
+    options: "rw,noatime,compress=zstd:3{{ ',ssd,discard=async' if disksetup_device_is_ssd else '' }},space_cache=v2"
+  - name: "@log"
+    mountpoint: /var/log
+    options: "rw,noatime,compress=zstd:3{{ ',ssd,discard=async' if disksetup_device_is_ssd else '' }},space_cache=v2"
+  - name: "@pkg"
+    mountpoint: /var/cache/pacman/pkg
+    options: "rw,noatime,compress=zstd:3{{ ',ssd,discard=async' if disksetup_device_is_ssd else '' }},space_cache=v2"
+  - name: "@snapshots"
+    mountpoint: /.snapshots
+    options: "rw,noatime,compress=zstd:3{{ ',ssd,discard=async' if disksetup_device_is_ssd else '' }},space_cache=v2"
+  - name: "@swap"
+    mountpoint: /swap
+    options: "rw,relatime,nodatacow,compress=no{{ ',ssd,discard=async' if disksetup_device_is_ssd else '' }}"
+  - name: "@tmp"
+    mountpoint: /tmp
+    options: "rw,noatime,compress=zstd:3{{ ',ssd,discard=async' if disksetup_device_is_ssd else '' }},space_cache=v2"
+  - name: "@var_tmp"
+    mountpoint: /var/tmp
+    options: "rw,noatime,compress=zstd:3{{ ',ssd,discard=async' if disksetup_device_is_ssd else '' }},space_cache=v2"
+
+install_secure_archlinux_packages_list:
+  - base
+  - base-devel
+  - aria2
+  - bash-completion
+  - btrfs-progs
+  - clevis
+  - cloud-init
+  - dkms
+  - efibootmgr
+  - efitools
+  - firewalld
+  - git
+  - go
+  - htop
+  - libfido2
+  - libpwquality
+  - linux
+  - linux-firmware
+  - linux-headers
+  - luksmeta
+  - lvm2
+  - man-db
+  - man-pages
+  - mkinitcpio-nfs-utils
+  - nano
+  - nmap
+  - openssh
+  - python3
+  - screenfetch
+  - sudo
+  - sysfsutils
+  - tmux
+  - tpm2-tools
+  - tpm2-tss
+  - usbutils
+  - vim
+  - xfsprogs
+  - zsh
+
+install_secure_archlinux_ssh_authorized_keys: "{{ secret_ssh_authorized_keys | default([], true) }}"
+install_secure_archlinux_wheel_user: archie
+install_secure_archlinux_wheel_user_id: 971
+install_secure_archlinux_wheel_group: archie
+install_secure_archlinux_wheel_group_id: 971
+install_secure_archlinux_wheel_password: "{{ secret_wheel_password }}"

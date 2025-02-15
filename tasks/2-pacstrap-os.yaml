@@ -1,0 +1,4 @@
+- name: Run pacstrap
+  ansible.builtin.command: pacstrap {{ install_secure_archlinux_mount_point }} --needed {{ install_secure_archlinux_packages_list | join(' ') }}
+  register: pacstrap_result
+  changed_when: pacstrap_result.rc == 0

@@ -1,0 +1,20 @@
+- name: Validate required values are set
+  ansible.builtin.assert:
+    that:
+      - domain_name is defined
+      - nbde_address is not defined or
+          ((nbde_address | ipaddr) and nbde_port is defined)
+      - hostname is defined
+      - disksetup_device is defined
+      - locale_fallback is defined
+      - locale is defined
+      - location is defined
+      - luks_password is defined
+      - network_device is defined
+      - network_mac is defined
+      - network_static_ip is not defined or
+          ((network_static_ip | ipaddr) and
+            network_cidr is defined and
+            network_gateway4 is defined and
+            network_nameservers is defined)
+

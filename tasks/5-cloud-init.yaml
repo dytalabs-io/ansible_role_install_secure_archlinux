@@ -1,0 +1,42 @@
+- name: Write cloud-init configuration file
+  ansible.builtin.copy:
+    content: |2+
+      datasource_list: [ NoCloud ]
+    dest: "{{ install_secure_archlinux_mount_point }}/etc/cloud/cloud.cfg.d/99-custom.cfg"
+    mode: '0644'
+
+- name: Create cloud-init directories
+  ansible.builtin.file:
+    path: "{{ install_secure_archlinux_mount_point }}/var/lib/cloud/seed/nocloud"
+    state: directory
+    mode: '0755'
+
+- name: Copy cloud-init configuration file [meta-data]
+  ansible.builtin.template:
+    src: meta-data.yaml
+    dest: "{{ install_secure_archlinux_mount_point }}/var/lib/cloud/seed/nocloud/meta-data"
+    mode: '0644'
+
+- name: Copy cloud-init configuration file [network-config]
+  ansible.builtin.template:
+    src: network-config.yaml
+    dest: "{{ install_secure_archlinux_mount_point }}/var/lib/cloud/seed/nocloud/network-config"
+    mode: '0644'
+
+- name: Copy cloud-init configuration file [user-data]
+  ansible.builtin.template:
+    src: user-data.yaml
+    dest: "{{ install_secure_archlinux_mount_point }}/var/lib/cloud/seed/nocloud/user-data"
+    mode: '0644'
+
+- name: Enable services
+  loop:
+    - cloud-config.service
+    - cloud-final.service
+    # - cloud-init-hotplugd.socket
+    - cloud-init-local.service
+    - cloud-init-main.service
+    - cloud-init-network.service
+  ansible.builtin.command: arch-chroot {{ install_secure_archlinux_mount_point }} /usr/bin/systemctl enable {{ item }}
+  register: _enable_services
+  changed_when: _enable_services.rc == 0
