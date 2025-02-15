@@ -1,5 +1,5 @@
 galaxy_info:
-  namespace: dytalabs_io
+  namespace: dytalabs-io
   role_name: install_secure_archlinux
   author: ryza
   description: A secure installation of Arch Linux
